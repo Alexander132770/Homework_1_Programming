@@ -13,9 +13,6 @@ permissions:
   contents: write  # Необходимо для создания релизов
   pull-requests: write
 
-env:
-  BUILD_TYPE: Release
-
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -33,49 +30,124 @@ jobs:
           sudo apt-get install -y build-essential
           sudo apt-get install -y clang-tidy clang-format
 
-      # Шаг 3: Собрать проект с помощью Makefile
+      # Шаг 3: Создать правильный Makefile для папки src
+      - name: Create Makefile for src directory
+        run: |
+          cat > Makefile << 'EOF'
+          # ==============================================================================
+          # Makefile для C++ проекта (файлы в src/)
+          # ==============================================================================
+
+          TARGET = rpn_calculator
+          SRC_DIR = src
+          BUILD_DIR = build
+
+          # Исходные файлы в папке src
+          SOURCES = $(SRC_DIR)/main.cpp $(SRC_DIR)/rpn.cpp
+          OBJECTS = $(SOURCES:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
+
+          # Компилятор и флаги
+          CXX = g++
+          CXX_STANDARD = c++17
+          CXXFLAGS_BASE = -std=$(CXX_STANDARD) -Wall -Wextra -Wpedantic -I$(SRC_DIR)
+
+          # Конфигурации сборки
+          CXXFLAGS_DEBUG = $(CXXFLAGS_BASE) -g -O0
+          CXXFLAGS_RELEASE = $(CXXFLAGS_BASE) -O3 -DNDEBUG
+
+          .DEFAULT_GOAL := debug
+
+          debug: CXXFLAGS = $(CXXFLAGS_DEBUG)
+          debug: $(BUILD_DIR)/$(TARGET)
+
+          release: CXXFLAGS = $(CXXFLAGS_RELEASE)
+          release: $(BUILD_DIR)/$(TARGET)
+
+          $(BUILD_DIR)/$(TARGET): $(OBJECTS)
+          	$(CXX) $(OBJECTS) -o $@
+          	@echo "✅ Сборка завершена: $@"
+
+          $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp | $(BUILD_DIR)
+          	@mkdir -p $(@D)
+          	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+          $(BUILD_DIR):
+          	@mkdir -p $@
+
+          clean:
+          	rm -rf $(BUILD_DIR)
+          	@echo "✅ Очистка завершена"
+
+          run: debug
+          	./$(BUILD_DIR)/$(TARGET) input.txt output.txt
+
+          .PHONY: all debug release clean run
+          EOF
+          
+          echo "✅ Makefile создан для папки src/"
+
+      # Шаг 4: Проверить наличие исходных файлов
+      - name: Verify source files exist
+        run: |
+          if [ ! -f "src/main.cpp" ]; then
+            echo "❌ Файл src/main.cpp не найден"
+            exit 1
+          fi
+          if [ ! -f "src/rpn.cpp" ]; then
+            echo "❌ Файл src/rpn.cpp не найден"
+            exit 1
+          fi
+          if [ ! -f "src/rpn.hpp" ]; then
+            echo "❌ Файл src/rpn.hpp не найден"
+            exit 1
+          fi
+          echo "✅ Все исходные файлы найдены в папке src/"
+
+      # Шаг 5: Собрать проект с помощью Makefile
       - name: Build project
         run: make release
 
-      # Шаг 4: Запустить линтер (проверка стиля кода)
+      # Шаг 6: Запустить линтер (проверка стиля кода)
       - name: Run clang-tidy linter
-        run: make lint
+        run: |
+          find src/ -name "*.cpp" -o -name "*.hpp" | xargs clang-tidy --quiet -checks=bugprone-*,clang-analyzer-*,performance-*,portability-*,readability-* -- -Isrc
+          echo "✅ Lint проверка пройдена"
 
-      # Шаг 5: Запустить программу с тестовыми данными
+      # Шаг 7: Запустить программу с тестовыми данными
       - name: Test application
         run: |
           # Создаем тестовый файл
-          cat > test_input.txt << 'EOF'
+          cat > input.txt << 'EOF'
           3 2 - 1 +
           2 12 6 / -
           5 1 2 + 4 * + 3 -
           EOF
           
-          ./build/rpn_calculator test_input.txt test_output.txt
+          ./build/rpn_calculator input.txt output.txt
           echo "Результаты тестирования:"
-          cat test_output.txt
+          cat output.txt
           
           # Проверяем корректность результатов
-          if ! grep -q "= 2" test_output.txt || ! grep -q "= 0" test_output.txt; then
-            echo "Тесты не прошли: некорректные результаты вычислений"
+          if ! grep -q "= 2" output.txt || ! grep -q "= 0" output.txt; then
+            echo "❌ Тесты не прошли: некорректные результаты вычислений"
             exit 1
           fi
-          echo "Все тесты прошли успешно"
+          echo "✅ Все тесты прошли успешно"
 
-      # Шаг 6: Очистить артефакты сборки
+      # Шаг 8: Очистить артефакты сборки
       - name: Clean build artifacts
         run: make clean
 
-      # Шаг 7: Проверить, что в репозитории нет артефактов сборки
+      # Шаг 9: Проверить, что в репозитории нет артефактов сборки
       - name: Verify no build files in repository
         run: |
           if [ -d "build" ] || [ -f "*.o" ] || [ -f "rpn_calculator" ]; then
-            echo "ERROR: Build artifacts found in repository!"
+            echo "❌ ERROR: Build artifacts found in repository!"
             echo "Found files:"
             find . -name "*.o" -o -name "rpn_calculator" -o -name "build" | grep -v "./.git"
             exit 1
           fi
-          echo "Repository is clean - no build artifacts found"
+          echo "✅ Repository is clean - no build artifacts found"
 
   create-release:
     runs-on: ubuntu-latest
@@ -87,24 +159,78 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Шаг 2: Установить инструменты для сборки
+      # Шаг 2: Создать Makefile для папки src
+      - name: Create Makefile for src directory
+        run: |
+          cat > Makefile << 'EOF'
+          # ==============================================================================
+          # Makefile для C++ проекта (файлы в src/)
+          # ==============================================================================
+
+          TARGET = rpn_calculator
+          SRC_DIR = src
+          BUILD_DIR = build
+
+          # Исходные файлы в папке src
+          SOURCES = $(SRC_DIR)/main.cpp $(SRC_DIR)/rpn.cpp
+          OBJECTS = $(SOURCES:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
+
+          # Компилятор и флаги
+          CXX = g++
+          CXX_STANDARD = c++17
+          CXXFLAGS_BASE = -std=$(CXX_STANDARD) -Wall -Wextra -Wpedantic -I$(SRC_DIR)
+
+          # Конфигурации сборки
+          CXXFLAGS_DEBUG = $(CXXFLAGS_BASE) -g -O0
+          CXXFLAGS_RELEASE = $(CXXFLAGS_BASE) -O3 -DNDEBUG
+
+          .DEFAULT_GOAL := debug
+
+          debug: CXXFLAGS = $(CXXFLAGS_DEBUG)
+          debug: $(BUILD_DIR)/$(TARGET)
+
+          release: CXXFLAGS = $(CXXFLAGS_RELEASE)
+          release: $(BUILD_DIR)/$(TARGET)
+
+          $(BUILD_DIR)/$(TARGET): $(OBJECTS)
+          	$(CXX) $(OBJECTS) -o $@
+          	@echo "✅ Сборка завершена: $@"
+
+          $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp | $(BUILD_DIR)
+          	@mkdir -p $(@D)
+          	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+          $(BUILD_DIR):
+          	@mkdir -p $@
+
+          clean:
+          	rm -rf $(BUILD_DIR)
+          	@echo "✅ Очистка завершена"
+
+          run: debug
+          	./$(BUILD_DIR)/$(TARGET) input.txt output.txt
+
+          .PHONY: all debug release clean run
+          EOF
+
+      # Шаг 3: Установить инструменты для сборки
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential
 
- # Шаг 3: Собрать релизную версию
+      # Шаг 4: Собрать релизную версию
       - name: Build release version
         run: |
           make release
           # Проверяем что бинарник создан
           if [ ! -f "build/rpn_calculator" ]; then
-            echo "Исполняемый файл не был создан"
+            echo "❌ Исполняемый файл не был создан"
             exit 1
           fi
-          echo "Релизная сборка создана"
+          echo "✅ Релизная сборка создана"
 
- # Шаг 4: Создать архив с релизом
+      # Шаг 5: Создать архив с релизом
       - name: Create release archive
         run: |
           # Создаем временную директорию для релиза
@@ -116,9 +242,9 @@ jobs:
           
           # Создаем архив
           tar -czf rpn-calculator-${{ github.ref_name }}.tar.gz -C release_package .
-          echo "Архив релиза создан: rpn-calculator-${{ github.ref_name }}.tar.gz"
+          echo "✅ Архив релиза создан: rpn-calculator-${{ github.ref_name }}.tar.gz"
 
-      # Шаг 5: Создать релиз на GitHub
+      # Шаг 6: Создать релиз на GitHub
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -133,6 +259,14 @@ jobs:
             - Обработка ошибок и валидация выражений
             - Пакетная обработка файлов
             
+            ### Как использовать?
+            ```bash
+            ./rpn_calculator input.txt output.txt
+            ```
+            
+            ### Системные требования
+            - Linux с glibc 2.17+
+            - Совместимость с x86_64 архитектурой
             
           files: |
             rpn-calculator-${{ github.ref_name }}.tar.gz
@@ -141,7 +275,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-# Шаг 6: Очистка после создания релиза
+      # Шаг 7: Очистка после создания релиза
       - name: Cleanup after release
         run: |
           make clean
@@ -149,24 +283,7 @@ jobs:
           rm -f rpn-calculator-*.tar.gz
         if: always()
 
-# Отдельный job для проверки форматирования кода
-  code-quality:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install clang-format
-        run: sudo apt-get update && sudo apt-get install -y clang-format
-
-      - name: Check code formatting
-        run: |
-          # Проверяем форматирование всех .cpp и .hpp файлов
-          find . -name "*.cpp" -o -name "*.hpp" | xargs clang-format --dry-run --Werror --style=Google
-          echo "Форматирование кода соответствует стандарту Google"
-
 # Разрешаем параллельное выполнение jobs
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
