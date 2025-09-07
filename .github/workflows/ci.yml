@@ -1,0 +1,49 @@
+name: CI - Build and Lint
+
+on:
+  push:
+    branches: [ "ci_test", "main" ]
+  pull_request:
+    branches: [ "ci_test", "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-analyze:
+    runs-on: ubuntu-latest
+    steps:
+      
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+          sudo apt-get install -y clang-tidy clang-format
+
+      
+      - name: Build project
+        run: make
+
+      
+      - name: Run clang-tidy linter
+        run: make lint
+
+      
+      - name: Clean build artifacts
+        run: make clean
+
+
+      - name: Verify no build files in repository
+        run: |
+          if [ -d "build" ] || [ -f "*.o" ] || [ -f "rpn_calculator" ]; then
+            echo "ERROR: Build artifacts found in repository!"
+            echo "Found files:"
+            find . -name "*.o" -o -name "rpn_calculator" -o -name "build" | grep -v "./.git"
+            exit 1
+          fi
+          echo "Repository is clean - no build artifacts found"
