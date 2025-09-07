@@ -18,7 +18,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Шаг 2: Установить только build-essential (убираем clang-tidy)
+      # Шаг 2: Установить только build-essential
       - name: Install build tools
         run: |
           sudo apt-get update
@@ -96,19 +96,24 @@ jobs:
           fi
           echo "✅ Программа работает корректно"
 
-      # Шаг 7: Очистить артефакты
+      # Шаг 7: Очистить артефакты (ИСПРАВЛЕННЫЙ ШАГ)
       - name: Clean build artifacts
         run: |
           make clean
           echo "Проверка после очистки:"
-          ls -la | grep -E "(build|\.o)"
+          # Используем конструкцию, которая не падает при отсутствии совпадений
+          ls -la | grep -E "(build|\.o)" || echo "✅ Артефактов не найдено - это хорошо!"
 
-      # Шаг 8: Финальная проверка
+      # Шаг 8: Финальная проверка (ИСПРАВЛЕННЫЙ ШАГ)
       - name: Final verification
         run: |
-          if [ -d "build" ] || [ -f "*.o" ] || [ -f "rpn_calculator" ]; then
+          # Используем конструкцию, которая не падает при отсутствии файлов
+          artifacts=$(find . -name "*.o" -o -name "rpn_calculator" -o -name "build" 2>/dev/null || true)
+          
+          if [ -n "$artifacts" ]; then
             echo "❌ Обнаружены артефакты сборки:"
-            find . -name "*.o" -o -name "rpn_calculator" -o -name "build" 2>/dev/null || true
+            echo "$artifacts"
             exit 1
+          else
+            echo "✅ Репозиторий чист - артефактов не найдено"
           fi
-          echo "✅ Репозиторий чист"
