@@ -14,30 +14,30 @@ jobs:
   build-and-analyze:
     runs-on: ubuntu-latest
     steps:
-      
+      # Шаг 1: Получить код из репозитория
       - name: Checkout code
         uses: actions/checkout@v4
 
-      
+      # Шаг 2: Установить компилятор, make и утилиты для анализа кода
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential
           sudo apt-get install -y clang-tidy clang-format
 
-      
+      # Шаг 3: Собрать проект с помощью Makefile
       - name: Build project
         run: make
 
-      
+      # Шаг 4: Запустить линтер (проверка стиля кода)
       - name: Run clang-tidy linter
         run: make lint
 
-      
+      # Шаг 5: Очистить артефакты сборки
       - name: Clean build artifacts
         run: make clean
 
-
+      # Шаг 6: Проверить, что в репозитории нет артефактов сборки
       - name: Verify no build files in repository
         run: |
           if [ -d "build" ] || [ -f "*.o" ] || [ -f "rpn_calculator" ]; then
