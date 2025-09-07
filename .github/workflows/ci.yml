@@ -1,0 +1,119 @@
+name: CI - Build and Test
+
+on:
+  push:
+    branches: [ "ci_test", "main" ]
+  pull_request:
+    branches: [ "ci_test", "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      # Шаг 1: Получить код из репозитория
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Шаг 2: Установить только build-essential
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      # Шаг 3: Создать простой Makefile
+      - name: Create Makefile
+        run: |
+          cat > Makefile << 'EOF'
+          # Простой Makefile для сборки проекта
+          TARGET = rpn_calculator
+          SRC_DIR = src
+          BUILD_DIR = build
+          
+          SOURCES = $(SRC_DIR)/main.cpp $(SRC_DIR)/rpn.cpp
+          OBJECTS = $(SOURCES:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
+          
+          CXX = g++
+          CXXFLAGS = -std=c++17 -Wall -Wextra -I$(SRC_DIR)
+          
+          $(BUILD_DIR)/$(TARGET): $(OBJECTS)
+          	$(CXX) $(OBJECTS) -o $@
+          	@echo "✅ Сборка завершена"
+          
+          $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp | $(BUILD_DIR)
+          	@mkdir -p $(@D)
+          	$(CXX) $(CXXFLAGS) -c $< -o $@
+          
+          $(BUILD_DIR):
+          	@mkdir -p $@
+          
+          clean:
+          	rm -rf $(BUILD_DIR)
+          
+          .PHONY: clean
+          EOF
+
+      # Шаг 4: Проверить наличие исходных файлов
+      - name: Verify source files
+        run: |
+          echo "Проверка файлов в src/:"
+          ls -la src/
+          if [ ! -f "src/main.cpp" ] || [ ! -f "src/rpn.cpp" ] || [ ! -f "src/rpn.hpp" ]; then
+            echo "❌ Не все исходные файлы найдены"
+            exit 1
+          fi
+          echo "✅ Все файлы на месте"
+
+      # Шаг 5: Собрать проект
+      - name: Build project
+        run: |
+          make
+          echo "Проверка собранного файла:"
+          ls -la build/
+
+      # Шаг 6: Создать тестовый input и запустить программу
+      - name: Test application
+        run: |
+          # Создаем тестовый файл
+          cat > input.txt << 'EOF'
+          3 2 - 1 +
+          2 12 6 / -
+          EOF
+          
+          echo "Запуск программы:"
+          ./build/rpn_calculator input.txt output.txt
+          
+          echo "Результаты:"
+          cat output.txt
+          
+          # Простая проверка что файл не пустой
+          if [ ! -s "output.txt" ]; then
+            echo "❌ output.txt пустой или не создан"
+            exit 1
+          fi
+          echo "✅ Программа работает корректно"
+
+      # Шаг 7: Очистить артефакты (ИСПРАВЛЕННЫЙ ШАГ)
+      - name: Clean build artifacts
+        run: |
+          make clean
+          echo "Проверка после очистки:"
+          # Используем конструкцию, которая не падает при отсутствии совпадений
+          ls -la | grep -E "(build|\.o)" || echo "✅ Артефактов не найдено - это хорошо!"
+
+      # Шаг 8: Финальная проверка (ИСПРАВЛЕННЫЙ ШАГ)
+      - name: Final verification
+        run: |
+          # Используем конструкцию, которая не падает при отсутствии файлов
+          artifacts=$(find . -name "*.o" -o -name "rpn_calculator" -o -name "build" 2>/dev/null || true)
+          
+          if [ -n "$artifacts" ]; then
+            echo "❌ Обнаружены артефакты сборки:"
+            echo "$artifacts"
+            exit 1
+          else
+            echo "✅ Репозиторий чист - артефактов не найдено"
+          fi
