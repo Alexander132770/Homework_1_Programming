@@ -1,4 +1,4 @@
-
+# Результаты сборки
 /build/
 *.o
 *.so
@@ -6,24 +6,24 @@
 *.out
 *.exe
 
-
+# Файлы IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 
-
+# Временные файлы
 *.tmp
 *.temp
 
-
+# Артефакты CI
 output_ci.txt
 output.txt
 
-
+# Системные файлы
 .DS_Store
 Thumbs.db
 
-
+# Резервные копии
 *~
 *.bak
